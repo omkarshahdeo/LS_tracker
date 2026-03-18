@@ -1,0 +1,66 @@
+@baseUrl = http://localhost:5000/api
+
+### Register User
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+    "name": "Test User",
+    "email": "test@example.com",
+    "password": "password123"
+}
+
+### Login User
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+    "email": "test@example.com",
+    "password": "password123"
+}
+
+### Get Me
+@token = {{login.response.body.token}}
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{token}}
+
+### Start Session
+POST {{baseUrl}}/api/sessions
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+    "subject": "Mathematics",
+    "category": "DSA"
+}
+
+### Get Dashboard Analytics
+GET {{baseUrl}}/api/analytics/dashboard
+Authorization: Bearer {{token}}
+
+### Get Leaderboard (By Time)
+GET {{baseUrl}}/api/leaderboard?sortBy=time
+Authorization: Bearer {{token}}
+
+### Get Leaderboard (By Streak)
+GET {{baseUrl}}/api/leaderboard?sortBy=streak
+Authorization: Bearer {{token}}
+
+### Get History Sessions
+GET {{baseUrl}}/sessions
+Authorization: Bearer {{token}}
+
+### Create Goal
+POST {{baseUrl}}/goals
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "title": "Study 10 hours of Math",
+    "targetTime": 36000
+}
+
+### Get Goals
+GET {{baseUrl}}/goals
+Authorization: Bearer {{token}}
