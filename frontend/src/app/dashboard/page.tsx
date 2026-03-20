@@ -11,6 +11,7 @@ import { PlayCircle, StopCircle, Clock, BookOpen, Calendar, Flame, Target } from
 import { motion } from 'framer-motion';
 
 const CATEGORIES = ['DSA', 'Web Dev', 'College', 'Reading', 'Other'];
+const ACTIVE_SESSION_STORAGE_KEY = 'activeStudySession';
 
 export default function DashboardPage() {
   const { user, loading } = useAuth();
@@ -22,6 +23,7 @@ export default function DashboardPage() {
   const [activeSession, setActiveSession] = useState<StudySession | null>(null);
   const [timer, setTimer] = useState(0); // seconds
   const [isTracking, setIsTracking] = useState(false);
+  const [showAllHistory, setShowAllHistory] = useState(false);
   
   const [subject, setSubject] = useState('');
   const [category, setCategory] = useState(CATEGORIES[0]);
@@ -54,15 +56,68 @@ export default function DashboardPage() {
     }
   }, [user, fetchData]);
 
+  const clearTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const getElapsedSeconds = useCallback((startTime: string) => {
+    return Math.max(0, Math.floor((Date.now() - new Date(startTime).getTime()) / 1000));
+  }, []);
+
+  const persistActiveSession = useCallback((session: StudySession) => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, JSON.stringify(session));
+  }, []);
+
+  const clearPersistedActiveSession = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+  }, []);
+
+  const startTimer = useCallback((startTime: string) => {
+    clearTimer();
+    setTimer(getElapsedSeconds(startTime));
+    timerRef.current = setInterval(() => {
+      setTimer(getElapsedSeconds(startTime));
+    }, 1000);
+  }, [getElapsedSeconds]);
+
+  useEffect(() => {
+    return () => {
+      clearTimer();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user || typeof window === 'undefined') return;
+
+    const savedSession = localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+    if (!savedSession) return;
+
+    try {
+      const parsedSession = JSON.parse(savedSession) as StudySession;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveSession(parsedSession);
+      setIsTracking(true);
+      setCategory(parsedSession.category || CATEGORIES[0]);
+      setSubject(parsedSession.subject || '');
+      startTimer(parsedSession.startTime);
+    } catch (error) {
+      console.error('Failed to restore active session', error);
+      clearPersistedActiveSession();
+    }
+  }, [clearPersistedActiveSession, startTimer, user]);
+
   const handleStartSession = async () => {
     try {
       const newSession = await startSession(subject || 'General Study', category);
       setActiveSession(newSession);
       setIsTracking(true);
-      
-      timerRef.current = setInterval(() => {
-        setTimer((prev) => prev + 1);
-      }, 1000);
+      persistActiveSession(newSession);
+      startTimer(newSession.startTime);
     } catch (err) {
       console.error('Failed to start session', err);
     }
@@ -72,14 +127,17 @@ export default function DashboardPage() {
     if (!activeSession) return;
     
     try {
-      if (timerRef.current) clearInterval(timerRef.current);
+      clearTimer();
       const endTime = new Date().toISOString();
-      await endSession(activeSession._id, endTime, timer);
+      const elapsedSeconds = getElapsedSeconds(activeSession.startTime);
+      await endSession(activeSession._id, endTime, elapsedSeconds);
       
       setActiveSession(null);
       setIsTracking(false);
       setTimer(0);
       setSubject('');
+      setCategory(CATEGORIES[0]);
+      clearPersistedActiveSession();
       fetchData();
     } catch (err) {
       console.error('Failed to end session', err);
@@ -240,8 +298,8 @@ export default function DashboardPage() {
                 <p className="text-sm mt-1 text-gray-600">Start the tracker to record your first session!</p>
               </div>
             ) : (
-              <div className="space-y-4">
-                {sessions.slice(0, 5).map((session, i) => (
+              <div className="space-y-4 max-h-[400px] overflow-y-auto pr-1">
+                {(showAllHistory ? sessions : sessions.slice(0, 5)).map((session, i) => (
                   <motion.div 
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
@@ -272,7 +330,13 @@ export default function DashboardPage() {
             
             {sessions.length > 5 && (
               <div className="mt-6 text-center">
-                <Button variant="ghost" className="text-sm text-gray-400 hover:text-white">View All History</Button>
+                <Button
+                  variant="ghost"
+                  className="text-sm text-gray-400 hover:text-white"
+                  onClick={() => setShowAllHistory((prev) => !prev)}
+                >
+                  {showAllHistory ? 'Show Recent Only' : 'View All History'}
+                </Button>
               </div>
             )}
           </Card>

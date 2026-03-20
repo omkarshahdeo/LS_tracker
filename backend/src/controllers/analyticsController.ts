@@ -71,7 +71,7 @@ export const getDashboardAnalytics = async (req: any, res: Response): Promise<vo
     }
 
     // Active Goals
-    const completedGoals = await Goal.countDocuments({ user: userId, progress: 100 });
+    const completedGoals = await Goal.countDocuments({ user: userId, completed: true });
     const totalGoals = await Goal.countDocuments({ user: userId });
 
     res.status(200).json({
