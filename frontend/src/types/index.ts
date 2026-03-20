@@ -19,8 +19,9 @@ export interface Goal {
   _id: string;
   user: string;
   title: string;
-  targetTime: number; // in hours
-  progress: number;
+  targetTime: number; // in seconds
+  progressTime: number; // in seconds
+  completed: boolean;
 }
 
 export interface Skill {

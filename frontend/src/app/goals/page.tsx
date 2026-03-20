@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { getGoals, createGoal } from '@/services/api';
+import { getGoals, createGoal, updateGoalDetails, deleteGoal } from '@/services/api';
 import { Goal } from '@/types';
 import { Target, PlusCircle, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -17,9 +17,12 @@ export default function GoalsPage() {
 
   const [goals, setGoals] = useState<Goal[]>([]);
   const [isAdding, setIsAdding] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   
   const [title, setTitle] = useState('');
   const [targetTime, setTargetTime] = useState('');
+  const [editTitle, setEditTitle] = useState('');
+  const [editTargetTime, setEditTargetTime] = useState('');
 
   const fetchGoals = useCallback(async () => {
     try {
@@ -58,6 +61,37 @@ export default function GoalsPage() {
       fetchGoals();
     } catch (err) {
       console.error('Failed to create goal', err);
+    }
+  };
+
+  const openEditGoal = (goal: Goal) => {
+    setEditingGoal(goal);
+    setEditTitle(goal.title);
+    setEditTargetTime((goal.targetTime / 3600).toString());
+  };
+
+  const handleUpdateGoal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingGoal || !editTitle || !editTargetTime) return;
+
+    try {
+      const targetTimeSecs = parseFloat(editTargetTime) * 3600;
+      await updateGoalDetails(editingGoal._id, { title: editTitle, targetTime: targetTimeSecs });
+      setEditingGoal(null);
+      setEditTitle('');
+      setEditTargetTime('');
+      fetchGoals();
+    } catch (err) {
+      console.error('Failed to update goal', err);
+    }
+  };
+
+  const handleDeleteGoal = async (goalId: string) => {
+    try {
+      await deleteGoal(goalId);
+      setGoals(prev => prev.filter(g => g._id !== goalId));
+    } catch (err) {
+      console.error('Failed to delete goal', err);
     }
   };
 
@@ -115,7 +149,7 @@ export default function GoalsPage() {
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
         {goals.map((goal, i) => {
-          const progressPercent = Math.min(100, Math.round((goal.progress / goal.targetTime) * 100));
+          const progressPercent = Math.min(100, Math.round((goal.progressTime / goal.targetTime) * 100));
           
           return (
             <motion.div
@@ -134,22 +168,40 @@ export default function GoalsPage() {
                       </div>
                       <h3 className="font-semibold text-white text-lg">{goal.title}</h3>
                     </div>
-                    {goal.progress >= goal.targetTime && <CheckCircle2 className="h-6 w-6 text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" />}
+                    <div className="flex items-center space-x-3">
+                      {goal.completed && <CheckCircle2 className="h-6 w-6 text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" />}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs text-gray-400 hover:text-white px-2 py-1"
+                        onClick={() => openEditGoal(goal)}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs text-red-400 hover:text-red-300 px-2 py-1"
+                        onClick={() => handleDeleteGoal(goal._id)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
                   </div>
                   
                   <div className="mt-8">
                     <div className="flex items-center justify-between text-sm mb-2">
                       <span className="font-medium text-gray-300 bg-white/5 px-2 py-1 rounded-md border border-white/10">{progressPercent}%</span>
                       <span className="text-gray-400 font-mono text-xs tracking-wider">
-                        {(goal.progress / 3600).toFixed(1)}H / {(goal.targetTime / 3600).toFixed(1)}H
+                        {(goal.progressTime / 3600).toFixed(1)}H / {(goal.targetTime / 3600).toFixed(1)}H
                       </span>
                     </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-white/5 border border-white/5">
+                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/5 border border-white/5">
                       <motion.div 
                         initial={{ width: 0 }}
                         animate={{ width: `${progressPercent}%` }}
                         transition={{ duration: 1, ease: 'easeOut', delay: 0.2 }}
-                        className={`h-full rounded-full relative ${goal.progress >= goal.targetTime ? 'bg-gradient-to-r from-emerald-400 to-teal-400' : 'bg-gradient-to-r from-indigo-500 to-fuchsia-500'}`} 
+                        className={`h-full rounded-full relative ${goal.completed ? 'bg-gradient-to-r from-emerald-400 to-teal-400' : 'bg-gradient-to-r from-indigo-500 to-fuchsia-500'}`} 
                       >
                         <div className="absolute inset-0 bg-white/20 w-full h-full animate-[shimmer_2s_infinite]" />
                       </motion.div>
@@ -170,6 +222,53 @@ export default function GoalsPage() {
           </div>
         )}
       </div>
+
+      {editingGoal && (
+        <AnimatePresence>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          >
+            <Card className="w-full max-w-lg border-indigo-500/40 bg-[#050317]">
+              <h2 className="text-xl font-semibold text-white mb-4">Edit Goal</h2>
+              <form onSubmit={handleUpdateGoal} className="space-y-6">
+                <Input
+                  label="Goal Title"
+                  value={editTitle}
+                  onChange={e => setEditTitle(e.target.value)}
+                  required
+                />
+                <Input
+                  label="Target Time (Hours)"
+                  type="number"
+                  min="1"
+                  value={editTargetTime}
+                  onChange={e => setEditTargetTime(e.target.value)}
+                  required
+                />
+                <div className="flex justify-end gap-3">
+                  <Button
+                    variant="ghost"
+                    className="text-gray-400 hover:text-white"
+                    type="button"
+                    onClick={() => setEditingGoal(null)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white shadow-[0_0_10px_rgba(99,102,241,0.4)]"
+                  >
+                    Save Changes
+                  </Button>
+                </div>
+              </form>
+            </Card>
+          </motion.div>
+        </AnimatePresence>
+      )}
     </div>
   );
 }

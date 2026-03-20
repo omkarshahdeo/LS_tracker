@@ -25,7 +25,15 @@ export const registerUser = async (userData: Record<string, unknown>) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(userData),
   });
-  if (!response.ok) throw new Error('Failed to register');
+  if (!response.ok) {
+    const text = await response.text();
+    try {
+      const data = JSON.parse(text) as { message?: string };
+      throw new Error(data.message || 'Failed to register');
+    } catch {
+      throw new Error(text || 'Failed to register');
+    }
+  }
   const data = await response.json();
   if (data.token) {
     localStorage.setItem('user', JSON.stringify(data));
@@ -49,6 +57,14 @@ export const loginUser = async (userData: Record<string, unknown>) => {
 
 export const logoutUser = () => {
   localStorage.removeItem('user');
+};
+
+export const getMe = async (): Promise<User> => {
+  const response = await fetch(`${API_URL}/auth/me`, {
+    headers: getHeaders(),
+  });
+  if (!response.ok) throw new Error('Failed to get me');
+  return response.json();
 };
 
 // Sessions
@@ -100,13 +116,31 @@ export const createGoal = async (goalData: { title: string; targetTime: number }
 };
 
 export const updateGoalProgress = async (id: string, progressTime: number): Promise<Goal> => {
-  const response = await fetch(`${API_URL}/goals/${id}`, {
+  const response = await fetch(`${API_URL}/goals/${id}/progress`, {
     method: 'PUT',
     headers: getHeaders(),
     body: JSON.stringify({ progressTime }),
   });
   if (!response.ok) throw new Error('Failed to update goal');
   return response.json();
+};
+
+export const updateGoalDetails = async (id: string, goalData: { title: string; targetTime: number }): Promise<Goal> => {
+  const response = await fetch(`${API_URL}/goals/${id}/details`, {
+    method: 'PUT',
+    headers: getHeaders(),
+    body: JSON.stringify(goalData),
+  });
+  if (!response.ok) throw new Error('Failed to update goal details');
+  return response.json();
+};
+
+export const deleteGoal = async (id: string): Promise<void> => {
+  const response = await fetch(`${API_URL}/goals/${id}`, {
+    method: 'DELETE',
+    headers: getHeaders(),
+  });
+  if (!response.ok) throw new Error('Failed to delete goal');
 };
 
 // Analytics

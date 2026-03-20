@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
 import { useRouter } from 'next/navigation';
+import { getMe } from '@/services/api';
 
 interface AuthContextType {
   user: User | null;
@@ -20,11 +21,34 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setUser(JSON.parse(storedUser));
+    if (!storedUser) {
+      setLoading(false);
+      return;
     }
-    setLoading(false);
+
+    const parsed = JSON.parse(storedUser) as User;
+    setUser(parsed);
+
+    // Validate the token against the backend. With in-memory Mongo (dev), a restart can
+    // invalidate the stored JWT because the user document no longer exists.
+    const validate = async () => {
+      try {
+        const me = await getMe();
+        setUser((prev) => {
+          if (!prev) return me;
+          // Preserve the token from localStorage (backend /me doesn't return it)
+          return { ...me, token: prev.token };
+        });
+      } catch (err) {
+        localStorage.removeItem('user');
+        setUser(null);
+        router.push('/login');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void validate();
   }, []);
 
   const login = (userData: User) => {
