@@ -24,6 +24,7 @@ export default function DashboardPage() {
   const [timer, setTimer] = useState(0); // seconds
   const [isTracking, setIsTracking] = useState(false);
   const [showAllHistory, setShowAllHistory] = useState(false);
+  const [sessionNotice, setSessionNotice] = useState<string | null>(null);
   
   const [subject, setSubject] = useState('');
   const [category, setCategory] = useState(CATEGORIES[0]);
@@ -85,30 +86,81 @@ export default function DashboardPage() {
     }, 1000);
   }, [getElapsedSeconds]);
 
+  const resetTrackingUi = useCallback(() => {
+    clearTimer();
+    setActiveSession(null);
+    setIsTracking(false);
+    setTimer(0);
+    setSubject('');
+    setCategory(CATEGORIES[0]);
+    clearPersistedActiveSession();
+  }, [clearPersistedActiveSession]);
+
   useEffect(() => {
     return () => {
       clearTimer();
     };
   }, []);
 
+  /** Restore active session only if the server still has this session open (duration 0). */
   useEffect(() => {
     if (!user || typeof window === 'undefined') return;
 
-    const savedSession = localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
-    if (!savedSession) return;
+    const savedRaw = localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+    if (!savedRaw) return;
 
+    let parsedSession: StudySession;
     try {
-      const parsedSession = JSON.parse(savedSession) as StudySession;
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+      parsedSession = JSON.parse(savedRaw) as StudySession;
+    } catch (error) {
+      console.error('Failed to parse active session', error);
+      clearPersistedActiveSession();
+      return;
+    }
+
+    let cancelled = false;
+
+    const restoreFromLocal = () => {
+      if (cancelled) return;
       setActiveSession(parsedSession);
       setIsTracking(true);
       setCategory(parsedSession.category || CATEGORIES[0]);
       setSubject(parsedSession.subject || '');
       startTimer(parsedSession.startTime);
-    } catch (error) {
-      console.error('Failed to restore active session', error);
-      clearPersistedActiveSession();
-    }
+    };
+
+    const validateWithServer = async () => {
+      try {
+        const list = await getSessions();
+        if (cancelled) return;
+        const server = list.find((s) => s._id === parsedSession._id);
+        const stillOpen = server && server.duration === 0;
+        if (!stillOpen) {
+          clearPersistedActiveSession();
+          if (server && server.duration > 0) {
+            setSessionNotice('That study session was already ended; cleared local timer.');
+          } else {
+            setSessionNotice('No matching session on the server (e.g. after a restart). Cleared local timer.');
+          }
+          setTimeout(() => setSessionNotice(null), 8000);
+          return;
+        }
+        setActiveSession(server);
+        setIsTracking(true);
+        setCategory(server.category || CATEGORIES[0]);
+        setSubject(server.subject || '');
+        startTimer(server.startTime);
+      } catch {
+        if (cancelled) return;
+        // Network or auth hiccup — still allow local restore; End Session will clear if API rejects
+        restoreFromLocal();
+      }
+    };
+
+    void validateWithServer();
+    return () => {
+      cancelled = true;
+    };
   }, [clearPersistedActiveSession, startTimer, user]);
 
   const handleStartSession = async () => {
@@ -126,21 +178,23 @@ export default function DashboardPage() {
   const handleStopSession = async () => {
     if (!activeSession) return;
     
+    const endTime = new Date().toISOString();
+    const elapsedSeconds = getElapsedSeconds(activeSession.startTime);
+
     try {
       clearTimer();
-      const endTime = new Date().toISOString();
-      const elapsedSeconds = getElapsedSeconds(activeSession.startTime);
       await endSession(activeSession._id, endTime, elapsedSeconds);
-      
-      setActiveSession(null);
-      setIsTracking(false);
-      setTimer(0);
-      setSubject('');
-      setCategory(CATEGORIES[0]);
-      clearPersistedActiveSession();
+      resetTrackingUi();
       fetchData();
     } catch (err) {
       console.error('Failed to end session', err);
+      // Backend may no longer have this session (in-memory DB reset, stale localStorage, etc.)
+      resetTrackingUi();
+      fetchData();
+      setSessionNotice(
+        'Could not save this session on the server (session missing or expired). Timer stopped locally — time may not be recorded.'
+      );
+      setTimeout(() => setSessionNotice(null), 10000);
     }
   };
 
@@ -273,7 +327,7 @@ export default function DashboardPage() {
               </div>
             )}
 
-            <div className="flex justify-center">
+            <div className="flex flex-col gap-3 justify-center">
               {!isTracking ? (
                 <Button onClick={handleStartSession} size="lg" className="w-full gap-2 shadow-[0_0_20px_rgba(99,102,241,0.3)] bg-indigo-600 hover:bg-indigo-500 border-none items-center justify-center">
                   <PlayCircle className="h-5 w-5" /> Start Studying
@@ -282,6 +336,11 @@ export default function DashboardPage() {
                 <Button onClick={handleStopSession} variant="danger" size="lg" className="w-full gap-2 shadow-[0_0_20px_rgba(239,68,68,0.3)] items-center justify-center">
                   <StopCircle className="h-5 w-5" /> End Session
                 </Button>
+              )}
+              {sessionNotice && (
+                <p className="text-center text-xs text-amber-200/90 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
+                  {sessionNotice}
+                </p>
               )}
             </div>
           </Card>
