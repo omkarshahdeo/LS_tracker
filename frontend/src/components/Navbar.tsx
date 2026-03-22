@@ -33,6 +33,7 @@ export const Navbar = () => {
               <div className="hidden md:flex items-center space-x-6 mr-4 border-r pr-6 border-white/10">
                 <Link href="/dashboard" className="text-sm font-semibold text-gray-300 hover:text-indigo-400 transition-colors">Dashboard</Link>
                 <Link href="/goals" className="text-sm font-semibold text-gray-300 hover:text-indigo-400 transition-colors">Goals</Link>
+                <Link href="/learn" className="text-sm font-semibold text-gray-300 hover:text-indigo-400 transition-colors">Learn</Link>
                 <Link href="/leaderboard" className="text-sm font-semibold text-gray-300 hover:text-indigo-400 transition-colors">Leaderboard</Link>
               </div>
               <span className="text-sm font-medium text-gray-200 line-clamp-1 max-w-[120px]">
